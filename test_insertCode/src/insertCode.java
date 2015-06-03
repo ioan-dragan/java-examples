@@ -13,12 +13,23 @@ public class insertCode {
 	private static int sampleFiled;
 	/**
 	 * @param args
-	 * @throws TargetLostException 
 	 */
 	public static void main(String[] args) throws ClassFormatException, IOException{
 		// TODO Auto-generated method stub
 		// Read the class file
-		ClassParser parser = new ClassParser("/home/ioan/workspace/test_insertCode/bin/HelloWorld1.class");
+	    String filename = null;
+	    try{
+		if (args.length < 1){
+		    throw new IOException();
+		}
+		
+		filename = args[0].substring(0,args[0].length()-6);
+	    }
+	    catch(IOException e){
+		System.out.println("File not found! Try again :D");
+		System.exit(-1);
+	    }
+		ClassParser parser = new ClassParser(filename.replace(".", "/")+".class"); 
 		// parse the class file and store it into clasa
 		JavaClass clasa = parser.parse();
 		
@@ -26,6 +37,14 @@ public class insertCode {
 		ClassGen cgen = new ClassGen(clasa);
 		// create a pool of constants. Here we can add new constants  
 		ConstantPoolGen cpgen = new ConstantPoolGen(clasa.getConstantPool());
+		
+		//get the index of the class name (in our case HelloWorld)
+		int index = clasa.getClassNameIndex();
+		// compute the index in the new pool
+		index = ((ConstantClass) cpgen.getConstant(index)).getNameIndex();
+		//set the name of the class
+		cpgen.setConstant(index, new ConstantUtf8(filename+"Modified"));
+		
 		//create a variable that holds our new method 
 		MethodGen mg = null;
 		//iterate over all the methods from the class
@@ -68,6 +87,7 @@ public class insertCode {
 		        mg.setMaxStack();
 		        //replace the method m from the class with the newly created method
 		        cgen.replaceMethod(m, mg.getMethod());
+		        cgen.setConstantPool(cpgen);
 			    
 		        //another way to do the last steps 
 				
@@ -78,7 +98,7 @@ public class insertCode {
 		                null, 
 		                 null,
 		                "test", 
-		                "HelloWorld", 
+		                filename+"Modified", 
 		                copy_inst, 
 		                cpgen);
 				//set the max's
@@ -100,7 +120,7 @@ public class insertCode {
 		//finished 
 		JavaClass jc1 = cgen.getJavaClass();
 		jc1.setConstantPool(cpgen.getFinalConstantPool());
-		jc1.dump("bin/HelloWorld.class");
+		jc1.dump(filename+"Modified.class");
 		
 		System.out.println(clasa.getClassName());
 		System.out.println(clasa.getFields());
