@@ -1,0 +1,33 @@
+In order to compile any hadoop application the following steps have to be taken: 
+
+1. Compile the application 
+
+hadoop com.sun.tools.javac.Main PiEstimator.java
+
+2. Create a jar file 
+
+jar cf PiEstimator.jar PiEstimator*.class
+
+3. Run the application 
+
+3.1 Start the hadoop services 
+
+/usr/local/hadoop/start-all.sh
+
+3.2 run the application 
+
+hadoop jar PiEstimator.jar PiEstimator 100 10 
+
+where PiEstimator is the class that implements main() 
+100 is the number of maps 
+10 number of samples per map
+
+
+Set up the environment for compilation to work:
+
+export JAVA_HOME=/usr/lib/jvm/default-java
+export HADOOP_HOME=/usr/local/hadoop 
+export PATH=$PATH:$HADOOP_HOME/bin
+export PATH=$PATH:$HADOOP_HOME/sbin
+export HADOOP_CLASSPATH=$JAVA_HOME/lib/tools.jar
+
