@@ -148,7 +148,7 @@ public class PiEstimator extends Configured implements Tool {
        */
       public void map(LongWritable offset,
 		      LongWritable size,
-		      OutputCollector<BooleanWritable, LongWritable, LongWritable> out,
+		      OutputCollector<BooleanWritable, LongWritable> out,
 		      Reporter reporter) throws IOException {
 
 	  final HaltonSequence haltonsequence = new HaltonSequence(offset.get());
