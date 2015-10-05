@@ -27,6 +27,8 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.BooleanWritable;
 import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.SequenceFile;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.io.WritableComparable;
@@ -65,8 +67,7 @@ import org.apache.hadoop.util.ToolRunner;
  */
 public class PiEstimator extends Configured implements Tool {
     /** tmp directory for input/output */
-    static private final Path TMP_DIR = new Path(
-						 PiEstimator.class.getSimpleName() + "_TMP_3_141592654");
+    static private final Path TMP_DIR = new Path(PiEstimator.class.getSimpleName() + "_TMP_3_141592654");
   
     /** 2-dimensional Halton sequence {H(i)},
      * where H(i) is a 2-dimensional point and i >= 1 is the index.
@@ -138,24 +139,24 @@ public class PiEstimator extends Configured implements Tool {
      * and then count points inside/outside of the inscribed circle of the square.
      */
   public static class PiMapper extends MapReduceBase
-      implements Mapper<LongWritable, LongWritable, BooleanWritable, LongWritable, LongWritable> {
+      implements Mapper<LongWritable, LongWritable, IntWritable, LongWritable> {
 
+      private final static IntWritable one = new IntWritable(1); 
       /** Map method.
        * @param offset samples starting from the (offset+1)th sample.
        * @param size the number of samples for this map
-       * @param out output {ture->numInside, false->numOutside, time spent}
+       * @param out output {ture->numInside, false->numOutside}
+       * @param metrics output {counter}
        * @param reporter
        */
       public void map(LongWritable offset,
 		      LongWritable size,
-		      OutputCollector<BooleanWritable, LongWritable> out,
+		      OutputCollector<IntWritable, LongWritable> out,
 		      Reporter reporter) throws IOException {
-
 	  final HaltonSequence haltonsequence = new HaltonSequence(offset.get());
 	  long numInside = 0L;
 	  long numOutside = 0L;
-	  
-	  final long startTime = System.currentTimeMillis();
+	  long counter = 1L;
 	  for(long i = 0; i < size.get(); ) {
 	      //generate points in a unit square
 	      final double[] point = haltonsequence.nextPoint();
@@ -174,14 +175,14 @@ public class PiEstimator extends Configured implements Tool {
 	      if (i % 1000 == 0) {
 		  reporter.setStatus("Generated " + i + " samples.");
 	      }
+	      counter++;
 	  }
-	  final double duration = (System.currentTimeMillis() - startTime)/1000.0;
 
 	  //output map results
-	  out.collect(new BooleanWritable(true), new LongWritable(numInside));
-	  out.collect(new BooleanWritable(false), new LongWritable(numOutside));
-	  out.collect(new LongWritable(duration));
-      }
+	  out.collect(new IntWritable(1), new LongWritable(numInside));
+	  out.collect(new IntWritable(2), new LongWritable(numOutside));
+	  out.collect(new IntWritable(0),new LongWritable(counter));
+	  }
   }
 
     /**
@@ -189,12 +190,13 @@ public class PiEstimator extends Configured implements Tool {
      * Accumulate points inside/outside results from the mappers.
      */
   public static class PiReducer extends MapReduceBase
-      implements Reducer<BooleanWritable, LongWritable, WritableComparable<?>, Writable> {
+      implements Reducer<IntWritable, LongWritable, WritableComparable<?>, Writable> {
     
       private long numInside = 0;
       private long numOutside = 0;
+      private long counter = 0;
       private JobConf conf; //configuration for accessing the file system
-      
+      private IntWritable result = new IntWritable(); 
       /** Store job configuration. */
     @Override
 	public void configure(JobConf job) {
@@ -208,15 +210,19 @@ public class PiEstimator extends Configured implements Tool {
      * @param output dummy, not used here.
      * @param reporter
      */
-    public void reduce(BooleanWritable isInside,
-                       Iterator<LongWritable> values,
+    public void reduce(IntWritable isInside,
+		       Iterator<LongWritable> values,
                        OutputCollector<WritableComparable<?>, Writable> output,
-                       Reporter reporter) throws IOException {
-	if (isInside.get()) {
+		       Reporter reporter) throws IOException {
+	if (isInside.get()==1) {
 	    for(; values.hasNext(); numInside += values.next().get());
-	} else {
+	} else if(isInside.get()==2){
 	    for(; values.hasNext(); numOutside += values.next().get());
+	    } else {
+	    for (; values.hasNext(); counter += values.next().get());
 	}
+	
+	
     }
 
     /**
@@ -228,10 +234,11 @@ public class PiEstimator extends Configured implements Tool {
 	Path outDir = new Path(TMP_DIR, "out");
 	Path outFile = new Path(outDir, "reduce-out");
 	FileSystem fileSys = FileSystem.get(conf);
+
 	SequenceFile.Writer writer = SequenceFile.createWriter(fileSys, conf,
-							       outFile, LongWritable.class, LongWritable.class, 
+							       outFile, LongWritable.class, LongWritable.class,
 							       CompressionType.NONE);
-	writer.append(new LongWritable(numInside), new LongWritable(numOutside));
+	writer.append(new LongWritable(numInside), new LongWritable(numOutside));//, new LongWritable(counter));
 	writer.close();
     }
   }
@@ -248,7 +255,7 @@ public class PiEstimator extends Configured implements Tool {
 
 	jobConf.setInputFormat(SequenceFileInputFormat.class);
 
-	jobConf.setOutputKeyClass(BooleanWritable.class);
+	jobConf.setOutputKeyClass(IntWritable.class);
 	jobConf.setOutputValueClass(LongWritable.class);
 	jobConf.setOutputFormat(SequenceFileOutputFormat.class);
 
@@ -285,7 +292,8 @@ public class PiEstimator extends Configured implements Tool {
 		final LongWritable size = new LongWritable(numPoints);
 		final SequenceFile.Writer writer = SequenceFile.createWriter(
 									     fs, jobConf, file,
-									     LongWritable.class, LongWritable.class, CompressionType.NONE);
+									     LongWritable.class, LongWritable.class, //LongWritable.class,
+									     CompressionType.NONE);
 		try {
 		    writer.append(offset, size);
 		} finally {
@@ -305,13 +313,16 @@ public class PiEstimator extends Configured implements Tool {
 	    Path inFile = new Path(outDir, "reduce-out");
 	    LongWritable numInside = new LongWritable();
 	    LongWritable numOutside = new LongWritable();
+	    LongWritable countsS = new LongWritable();
+	    LongWritable inTime = new LongWritable();
 	    SequenceFile.Reader reader = new SequenceFile.Reader(fs, inFile, jobConf);
 	    try {
-		reader.next(numInside, numOutside);
+		reader.next(numInside, numOutside);//, countsS);
 	    } finally {
 		reader.close();
 	    }
 
+	    System.out.println("Time spent in map"+inTime.get());
 	    //compute estimated value
 	    return BigDecimal.valueOf(4).setScale(20)
 		.multiply(BigDecimal.valueOf(numInside.get()))
