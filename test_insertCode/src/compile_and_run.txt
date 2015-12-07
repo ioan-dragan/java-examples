@@ -1,0 +1,6 @@
+In order to compile the code: 
+javac -cp /path/to/whaterver/.jar Java_file.java
+
+to run it: 
+
+java -cp .:/path/to/whatever/.jar Java_file [parameters]
